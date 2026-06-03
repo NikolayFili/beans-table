@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#B5552F"/>
+  <!-- plate -->
+  <circle cx="256" cy="262" r="150" fill="#FBF8F2"/>
+  <circle cx="256" cy="262" r="150" fill="none" stroke="#EBD9CD" stroke-width="10"/>
+  <circle cx="256" cy="262" r="104" fill="none" stroke="#EBD9CD" stroke-width="6"/>
+  <!-- fork -->
+  <g fill="#B5552F">
+    <rect x="182" y="206" width="11" height="46" rx="5"/>
+    <rect x="201" y="206" width="11" height="46" rx="5"/>
+    <rect x="220" y="206" width="11" height="46" rx="5"/>
+    <rect x="197" y="248" width="19" height="92" rx="9"/>
+  </g>
+  <!-- spoon -->
+  <g fill="#B5552F">
+    <ellipse cx="312" cy="232" rx="26" ry="34"/>
+    <rect x="303" y="258" width="18" height="84" rx="9"/>
+  </g>
+  <!-- 'Bean' steam dots -->
+  <circle cx="256" cy="120" r="9" fill="#EBD9CD"/>
+  <circle cx="224" cy="138" r="6" fill="#EBD9CD"/>
+  <circle cx="288" cy="138" r="6" fill="#EBD9CD"/>
+</svg>
