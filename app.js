@@ -557,7 +557,6 @@ function renderWeek() {
             <a class="btn primary" href="${googleCalendarUrl(dish)}" target="_blank" rel="noopener">Add to Google Calendar</a>
             <button class="btn" data-ics="${dish.id}">Download .ics</button>
           </div>
-          <div class="note-soft">Bean's Table doesn't send notifications itself — it has no server. Your <b>calendar app</b> does the reminding once you add this recurring event. The .ics also sets an alarm 3 hours before.</div>
 
           <hr class="divider" />
           <button class="btn block" data-build-list="${dish.id}">🛒 Build shopping list from this dish</button>
