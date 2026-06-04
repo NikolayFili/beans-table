@@ -55,7 +55,9 @@ a { color: var(--terracotta); }
   display: flex; align-items: center; justify-content: space-between;
   padding: 0 18px;
 }
-.wordmark { font-size: 22px; margin: 0; font-weight: 600; }
+.brand { display: flex; flex-direction: column; line-height: 1; }
+.wordmark { font-size: 22px; margin: 0; font-weight: 600; line-height: 1.05; }
+.brand-sub { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--terracotta); font-weight: 700; margin-top: 3px; }
 .icon-btn {
   border: 1px solid var(--hairline); background: var(--card);
   color: var(--muted); width: 38px; height: 38px; border-radius: 50%;
@@ -278,6 +280,31 @@ textarea { resize: vertical; min-height: 92px; line-height: 1.45; }
   font-size: 14px; font-weight: 500; box-shadow: var(--shadow);
   animation: fade .2s both;
 }
+
+/* ---------- Occasions (Bean & Boyfriend) ---------- */
+.occasion {
+  display: flex; align-items: center; gap: 14px;
+  background: linear-gradient(180deg, var(--soft), color-mix(in srgb, var(--soft) 60%, var(--card)));
+  border: 1px solid var(--hairline); border-radius: var(--radius);
+  padding: 14px 16px; margin-bottom: 18px; box-shadow: var(--shadow);
+}
+.occasion.today { border-color: color-mix(in srgb, var(--terracotta) 45%, var(--hairline)); }
+.occ-emoji { font-size: 30px; line-height: 1; flex-shrink: 0; }
+.occ-emoji.sm { font-size: 20px; }
+.occ-body { min-width: 0; }
+.occ-line { font-family: var(--display); font-size: 17px; font-weight: 500; margin: 0; color: var(--ink); line-height: 1.25; }
+.occ-sub { font-size: 12px; color: var(--terracotta); font-weight: 600; letter-spacing: .03em; margin: 3px 0 0; text-transform: uppercase; }
+
+.note-soft.accent { background: color-mix(in srgb, var(--terracotta) 12%, var(--soft)); color: #7a3a1f; }
+
+.occ-list { display: flex; flex-direction: column; }
+.occ-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--hairline); }
+.occ-row:last-child { border-bottom: none; }
+.occ-name { flex: 1; font-size: 15px; }
+.occ-days { font-size: 12.5px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.occ-days.soon { color: var(--terracotta); }
+
+.signoff { text-align: center; font-family: var(--display); font-style: italic; color: var(--muted); font-size: 14px; margin: 18px 0 4px; }
 
 .row-between { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .muted { color: var(--muted); }

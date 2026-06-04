@@ -141,6 +141,72 @@ function startOfDay(d) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 }
 
+/* ---- Bean & Boyfriend: our special dates ----
+   Hardcoded, recurring annually. `since` is the origin year, so the count is the
+   age (birthdays) or the number of years (anniversaries) on the upcoming date. */
+const CATS = "Dumpling & Muffinhead";
+const OCCASIONS = [
+  { name: "Boyfriend's birthday", emoji: "🎂", since: 1994, m: 4, d: 23,
+    line: (n) => `Boyfriend turns ${n} — Bean, the kitchen is yours today.` },
+  { name: "Bean's birthday", emoji: "🎂", since: 1995, m: 8, d: 24,
+    line: (n) => `Bean turns ${n}. Cook her something unforgettable.` },
+  { name: "Your first date", emoji: "💕", since: 2022, m: 6, d: 3,
+    line: (n) => `${n} year${n === 1 ? "" : "s"} since your first date, Bean & Boyfriend.` },
+  { name: "Wedding anniversary", emoji: "💍", since: 2023, m: 9, d: 25,
+    line: (n) => `${n} year${n === 1 ? "" : "s"} married — make it a candlelit one.` },
+  { name: CATS + "'s birthday", emoji: "🐾", since: 2023, m: 9, d: 27,
+    line: (n) => `${CATS} turn ${n}. Treats for them, a feast for you two.` },
+  { name: "Bean moved to LA", emoji: "🌴", since: 2023, m: 11, d: 12,
+    line: (n) => `${n} year${n === 1 ? "" : "s"} since Bean came home to LA.` },
+  { name: "Adopted " + CATS, emoji: "🐱", since: 2024, m: 1, d: 2,
+    line: (n) => `${n} year${n === 1 ? "" : "s"} since ${CATS} joined the family.` },
+  { name: "Bean's green card", emoji: "🎉", since: 2024, m: 6, d: 30,
+    line: (n) => `${n} year${n === 1 ? "" : "s"} since Bean's green card — here to stay.` },
+];
+
+// Each occasion's next upcoming date (this year or next), with days-away + the count.
+function upcomingOccasions(withinDays) {
+  const today = new Date();
+  const t0 = startOfDay(today);
+  return OCCASIONS.map((o) => {
+    let year = today.getFullYear();
+    let when = new Date(year, o.m - 1, o.d);
+    if (startOfDay(when) < t0) { year += 1; when = new Date(year, o.m - 1, o.d); }
+    const days = Math.round((startOfDay(when) - t0) / 86400000);
+    return { ...o, when, days, count: year - o.since };
+  })
+    .sort((a, b) => a.days - b.days)
+    .filter((o) => withinDays == null || o.days <= withinDays);
+}
+
+function daysLabel(days) {
+  if (days === 0) return "today";
+  if (days === 1) return "tomorrow";
+  if (days < 14) return "in " + days + " days";
+  if (days < 56) return "in " + Math.round(days / 7) + " weeks";
+  return "on " + new Date(Date.now() + days * 86400000).toLocaleDateString(undefined, { month: "long", day: "numeric" });
+}
+
+// Big celebratory banner for the single nearest occasion.
+function occasionBanner(o) {
+  return `<div class="occasion ${o.days === 0 ? "today" : ""}">
+    <span class="occ-emoji">${o.emoji}</span>
+    <div class="occ-body">
+      <p class="occ-line">${esc(o.line(o.count))}</p>
+      <p class="occ-sub">${esc(o.name)} · ${daysLabel(o.days)}</p>
+    </div>
+  </div>`;
+}
+
+// Compact row for occasion lists (This Week, Settings).
+function occasionRow(o) {
+  return `<div class="occ-row">
+    <span class="occ-emoji sm">${o.emoji}</span>
+    <span class="occ-name">${esc(o.name)}</span>
+    <span class="occ-days ${o.days <= 7 ? "soon" : ""}">${daysLabel(o.days)}</span>
+  </div>`;
+}
+
 // Detect a source type from a URL the user pastes.
 function detectSource(url) {
   if (!url || !url.trim()) return "mine";
@@ -403,7 +469,10 @@ function renderLibrary() {
     .map(([k, v]) => `<button data-sort="${k}" aria-pressed="${state.settings.sort === k}">${v.label}</button>`)
     .join("");
 
+  const soon = upcomingOccasions(16)[0];
+
   app.innerHTML = `
+    ${soon ? occasionBanner(soon) : ""}
     <div class="section-head">
       <div>
         <p class="eyebrow">Dish library</p>
@@ -431,12 +500,14 @@ function renderLibrary() {
 
 function renderWeek() {
   const dish = state.weekDishId ? findDish(state.weekDishId) : null;
-  const dishOptions = state.dishes.length
-    ? state.dishes
-        .map((d) => `<option value="${d.id}" ${d.id === state.weekDishId ? "selected" : ""}>${esc(d.name)}</option>`)
-        .join("")
-    : "";
+  const dishOptions =
+    (state.weekDishId ? "" : `<option value="" selected>Choose a dish…</option>`) +
+    state.dishes
+      .map((d) => `<option value="${d.id}" ${d.id === state.weekDishId ? "selected" : ""}>${esc(d.name)}</option>`)
+      .join("");
   const next = dish ? nextOccurrence(state.settings.cookDay, state.settings.cookTime) : null;
+  const soonWeek = upcomingOccasions(12)[0];   // nearest occasion worth flagging on the cook
+  const ahead = upcomingOccasions(75).slice(0, 4); // short list of what's coming up
 
   app.innerHTML = `
     <div class="section-head">
@@ -477,6 +548,8 @@ function renderWeek() {
           <h3 style="font-size:22px;margin:2px 0 6px">${esc(dish.name)}</h3>
           <p class="muted" style="margin:0 0 14px">${WEEKDAYS[state.settings.cookDay]} at ${fmtTime(state.settings.cookTime)} · next on ${esc(fmtDate(next.toISOString()))}</p>
 
+          ${soonWeek ? `<div class="note-soft accent" style="margin-bottom:14px">${soonWeek.emoji} <b>${esc(soonWeek.name)}</b> is ${daysLabel(soonWeek.days)} — a lovely week to make it special for Bean.</div>` : ""}
+
           <p class="eyebrow">Weekly reminder</p>
           <div class="pill-row" style="margin:6px 0 14px">
             <a class="btn primary" href="${googleCalendarUrl(dish)}" target="_blank" rel="noopener">Add to Google Calendar</a>
@@ -488,6 +561,16 @@ function renderWeek() {
           <button class="btn block" data-build-list="${dish.id}">🛒 Build shopping list from this dish</button>
         </div>`
           : `<div class="note-soft">Pick a dish above to generate this week's reminder.</div>`
+      }
+
+      ${
+        ahead.length
+          ? `<div class="week-card">
+               <p class="eyebrow">Occasions ahead</p>
+               <p class="muted" style="margin:2px 0 12px">For Bean &amp; Boyfriend — cook something memorable.</p>
+               <div class="occ-list">${ahead.map(occasionRow).join("")}</div>
+             </div>`
+          : ""
       }
       `
     }`;
@@ -791,7 +874,7 @@ function confirmCooked(id) {
   saveState();
   closeSheet();
   render();
-  toast("Logged — nice work 🍽️");
+  toast("Logged — Bean's a lucky one 🍽️");
 }
 
 /* ---- Settings / backup ---- */
@@ -812,10 +895,18 @@ function openSettings() {
     </div>
 
     <hr class="divider" />
+
+    <div class="detail-section">
+      <h3>Bean &amp; Boyfriend — our calendar</h3>
+      <div class="occ-list">${upcomingOccasions(null).map(occasionRow).join("")}</div>
+    </div>
+
+    <hr class="divider" />
     <div class="note-soft">
       Bean's Table is a free, no-backend app. No accounts, no servers, no AI, no tracking.
       Reminders are delivered by <b>your own calendar app</b> — this app can't send push notifications.
     </div>
+    <p class="signoff">Made for Bean, by Boyfriend. 🤍</p>
   `);
 }
 
@@ -894,7 +985,7 @@ app.addEventListener("click", (e) => {
 app.addEventListener("change", (e) => {
   const t = e.target;
   if (t.id === "weekDish") {
-    state.weekDishId = t.value;
+    state.weekDishId = t.value || null;
     saveState();
     return renderWeek();
   }
