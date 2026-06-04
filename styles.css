@@ -216,6 +216,9 @@ textarea { resize: vertical; min-height: 92px; line-height: 1.45; }
 
 /* ---------- Overlay / sheet ---------- */
 .overlay { position: fixed; inset: 0; z-index: 40; display: flex; align-items: flex-end; justify-content: center; }
+/* The `hidden` attribute must win over the display:flex above (equal specificity
+   would otherwise keep the scrim visible and swallow every tap). */
+.overlay[hidden] { display: none; }
 .overlay-scrim { position: absolute; inset: 0; background: rgba(42,37,32,.38); animation: fade .25s both; }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 .sheet {
