@@ -104,11 +104,20 @@ function loadState() {
 
 function saveState() {
   try {
+    state.updatedAt = Date.now(); // last-write-wins clock for optional cloud sync
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (err) {
     toast("Couldn't save — storage may be full.");
     console.error(err);
   }
+  if (window.cloudSync) window.cloudSync.onLocalSave();
+}
+
+// Adopt a state pulled from the cloud WITHOUT bumping the clock or pushing it back.
+function applyRemoteState(remote) {
+  state = migrate(remote);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  render();
 }
 
 /* =========================================================================
@@ -947,6 +956,10 @@ function confirmCooked(id) {
 /* ---- Settings / backup ---- */
 function openSettings() {
   const n = state.dishes.length;
+  const sync = window.cloudSync;
+  const scfg = sync ? sync.getConfig() : {};
+  const sheetUrl = scfg.spreadsheetId ? "https://docs.google.com/spreadsheets/d/" + scfg.spreadsheetId + "/edit" : "";
+
   openSheet(`
     <div class="sheet-head">
       <h2>Settings</h2>
@@ -954,8 +967,26 @@ function openSettings() {
     </div>
 
     <div class="detail-section">
+      <h3>Sync with Google Sheets</h3>
+      <p class="muted" style="margin:0 0 12px">Optional — keep Bean's Table in sync across your devices through your own Google Sheet. Free, private to your Google account, no Apps Script. <a href="https://github.com/NikolayFili/beans-table#sync-with-google-sheets" target="_blank" rel="noopener">One-time setup steps ↗</a></p>
+      <div class="field">
+        <label for="sync-sheet">Google Sheet link</label>
+        <input type="text" id="sync-sheet" value="${esc(sheetUrl)}" placeholder="https://docs.google.com/spreadsheets/d/…" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label for="sync-client">Google OAuth Client ID</label>
+        <input type="text" id="sync-client" value="${esc(scfg.clientId || "")}" placeholder="…apps.googleusercontent.com" autocomplete="off" />
+      </div>
+      <div class="stack">
+        <button class="btn primary block" id="sync-connect">Connect Google</button>
+        <button class="btn ghost block" id="sync-disconnect" ${sync && sync.isConnected() ? "" : "hidden"}>Disconnect</button>
+      </div>
+      <p class="muted" id="sync-status" style="margin:10px 0 0;font-size:13px">${esc(sync ? sync.statusText() : "")}</p>
+    </div>
+
+    <div class="detail-section">
       <h3>Backup</h3>
-      <p class="muted" style="margin:0 0 12px">${n} dish${n === 1 ? "" : "es"} saved in this browser — there's no cloud. Export a backup before switching devices, then import it on the new one.</p>
+      <p class="muted" style="margin:0 0 12px">${n} dish${n === 1 ? "" : "es"} saved on this device. Export a JSON backup any time — handy even with sync on.</p>
       <div class="stack">
         <button class="btn block" id="export-btn">↓ Export backup</button>
         <button class="btn block ghost" id="import-btn">↑ Import backup</button>
@@ -969,6 +1000,7 @@ function openSettings() {
 
     <p class="signoff">Made for Bean, by Boyfriend. 🤍</p>
   `);
+  if (sync) sync.updateUi();
 }
 
 /* =========================================================================
@@ -1119,6 +1151,16 @@ sheet.addEventListener("click", (e) => {
 
   if (t.closest("#export-btn")) return exportData();
   if (t.closest("#import-btn")) return document.getElementById("importFile").click();
+
+  if (t.closest("#sync-connect")) {
+    if (!window.cloudSync) return;
+    cloudSync.setConfig({
+      clientId: document.getElementById("sync-client").value,
+      spreadsheetId: document.getElementById("sync-sheet").value,
+    });
+    return cloudSync.connect(!cloudSync.isConnected());
+  }
+  if (t.closest("#sync-disconnect")) return window.cloudSync && cloudSync.disconnect();
 });
 
 /* ---- Stars: works in library, detail, and the occasion form ---- */

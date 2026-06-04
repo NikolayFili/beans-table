@@ -53,6 +53,42 @@ python3 -m http.server 8000
 …or just open `index.html` in a browser. (A server is recommended so the service worker
 and PWA install work; `file://` blocks service workers.)
 
+## Sync with Google Sheets
+
+Bean's Table is local-first (localStorage), but you can **optionally** sync across your
+devices through **your own Google Sheet** — free, private to your Google account, and with
+**no Apps Script and no server**. It uses the Google Sheets API with Google sign-in
+(OAuth). The whole app-state is stored as JSON in cell **A2** of the sheet, and sync is
+last-write-wins (the most recently edited device wins).
+
+### One-time setup (~10 minutes)
+
+You need a free Google Cloud OAuth **Client ID**. Only you can create it — it ties the app
+to your Google account.
+
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/) and **create a
+   project** (any name, e.g. "Beans Table").
+2. **APIs & Services → Library →** search **"Google Sheets API" → Enable**.
+3. **APIs & Services → OAuth consent screen →** choose **External**, set an app name and
+   your email, and **add your own Google account as a Test user**. (No verification is
+   needed for personal use.)
+4. **APIs & Services → Credentials → Create credentials → OAuth client ID →** Application
+   type **Web application**. Under **Authorized JavaScript origins** add:
+   - `https://nikolayfili.github.io`
+   - `http://localhost:4173` (optional, for local testing)
+   Click **Create** and copy the **Client ID** (`…apps.googleusercontent.com`).
+5. Create a **new Google Sheet** (it can be blank) and copy its link from the address bar.
+6. In Bean's Table, open **⚙ Settings → Sync with Google Sheets**, paste the **Sheet link**
+   and the **Client ID**, then tap **Connect Google** and sign in. The first sign-in shows
+   an "unverified app" screen — that's expected for a personal app; choose **Advanced → go
+   to Bean's Table**.
+
+After that, every device where you enter the same Client ID + Sheet link and connect will
+stay in sync. Your data only ever travels between your browser and your own Sheet. The
+Client ID is not a secret (it's safe in the client); nothing is stored in this repo.
+
+> Note: the Sheets API is **free** with generous quotas. There's no billing to enable.
+
 ## Backup & device migration
 
 - **Settings (⚙︎) → Export backup** downloads a `beans-table-backup-YYYY-MM-DD.json`.
