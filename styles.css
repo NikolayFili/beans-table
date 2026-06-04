@@ -271,6 +271,9 @@ textarea { resize: vertical; min-height: 92px; line-height: 1.45; }
 .queue-select { flex: 1; padding: 9px 11px; font-size: 14px; color: var(--muted); }
 .queue-row.filled .queue-select { color: var(--ink); background: var(--card); border-color: color-mix(in srgb, var(--terracotta) 22%, var(--hairline)); }
 .queue-row.filled .qd-num { color: var(--terracotta); }
+.queue-add { display: flex; gap: 8px; align-items: center; }
+.queue-week { width: 116px; flex-shrink: 0; padding: 9px 10px; font-size: 14px; }
+.queue-add .queue-select { flex: 1; }
 .inline-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .note-soft { background: var(--soft); border-radius: var(--radius-sm); padding: 12px 14px; font-size: 13.5px; color: #6f6457; }
 

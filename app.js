@@ -323,6 +323,22 @@ function dateKey(d) {
   return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
 }
 
+// Rebuild a Date (at cook time) from a "YYYY-MM-DD" schedule key.
+function dateFromKey(k) {
+  const [y, m, d] = k.split("-").map(Number);
+  const [hh, mm] = (state.settings.cookTime || "10:00").split(":").map(Number);
+  return new Date(y, m - 1, d, hh || 0, mm || 0, 0, 0);
+}
+
+// Every booked cook from today onward, in date order.
+function scheduledCooks() {
+  const todayK = dateKey(new Date());
+  return Object.keys(state.schedule)
+    .filter((k) => k >= todayK && findDish(state.schedule[k]))
+    .sort()
+    .map((k) => ({ key: k, date: dateFromKey(k), dish: findDish(state.schedule[k]) }));
+}
+
 // The next `count` cook-weekday dates (at cook time), starting with the upcoming one.
 function weekSlots(count) {
   const first = nextOccurrence(state.settings.cookDay, state.settings.cookTime);
@@ -439,6 +455,7 @@ function toast(msg) {
 
 let state = loadState();
 let currentTab = "library";
+let queueExpanded = false; // Schedule: show all booked weeks vs. just the first few
 
 const app = document.getElementById("app");
 
@@ -565,13 +582,23 @@ function renderWeek() {
   const soonWeek = occUpcoming[0] && occUpcoming[0].days <= 12 ? occUpcoming[0] : null; // nearest, banner-worthy
   const ahead = occUpcoming.filter((o) => o !== soonWeek).slice(0, 4); // the rest, for the list
 
-  const slots = weekSlots(8); // the next 8 cook dates
-  const planned = slots.map((date) => ({ date, dish: findDish(state.schedule[dateKey(date)]) })).filter((s) => s.dish);
-  const upNext = planned[0] || null;
+  const cooks = scheduledCooks();              // only booked weeks, in date order
+  const upNext = cooks[0] || null;
+  const SHOWN = 3;
+  const visible = queueExpanded ? cooks : cooks.slice(0, SHOWN);
+  const openWeeks = weekSlots(12).map(dateKey).filter((k) => !state.schedule[k]); // unbooked weeks to add
 
-  const dishOptionsFor = (selectedId) =>
-    `<option value="">— none —</option>` +
-    state.dishes.map((d) => `<option value="${d.id}" ${d.id === selectedId ? "selected" : ""}>${esc(d.name)}</option>`).join("");
+  const queueRow = (s) => `
+    <div class="queue-row filled">
+      <div class="queue-date">
+        <span class="qd-day">${WEEKDAYS_SHORT[s.date.getDay()]}</span>
+        <span class="qd-num">${s.date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+      </div>
+      <select class="queue-select" data-slot="${s.key}" aria-label="Dish for ${esc(slotLabel(s.date))}">
+        ${state.dishes.map((d) => `<option value="${d.id}" ${d.id === s.dish.id ? "selected" : ""}>${esc(d.name)}</option>`).join("")}
+        <option value="">— remove —</option>
+      </select>
+    </div>`;
 
   app.innerHTML = `
     <div class="section-head">
@@ -619,24 +646,31 @@ function renderWeek() {
       <div class="week-card">
         <div class="row-between" style="margin-bottom:12px">
           <p class="eyebrow" style="margin:0">The queue</p>
-          ${planned.length ? `<button class="btn sm" data-schedule-ics>↓ Calendar (.ics)</button>` : ""}
+          ${cooks.length ? `<button class="btn sm" data-schedule-ics>↓ Calendar (.ics)</button>` : ""}
         </div>
-        <div class="queue">
-          ${slots
-            .map((date) => {
-              const key = dateKey(date);
-              const sid = state.schedule[key] || "";
-              return `<div class="queue-row ${sid ? "filled" : ""}">
-                <div class="queue-date">
-                  <span class="qd-day">${WEEKDAYS_SHORT[date.getDay()]}</span>
-                  <span class="qd-num">${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
-                </div>
-                <select class="queue-select" data-slot="${key}" aria-label="Dish for ${esc(slotLabel(date))}">${dishOptionsFor(sid)}</select>
-              </div>`;
-            })
-            .join("")}
-        </div>
-        <p class="hint" style="margin-top:12px">Assign a dish to each week. “Calendar (.ics)” adds every planned cook to your calendar app, each with an alarm 3 hours before.</p>
+
+        ${
+          cooks.length
+            ? `<div class="queue">${visible.map(queueRow).join("")}</div>
+               ${cooks.length > SHOWN ? `<button class="btn sm ghost" data-queue-expand style="margin-top:10px">${queueExpanded ? "Show less ▴" : "Show " + (cooks.length - SHOWN) + " more ▾"}</button>` : ""}`
+            : `<p class="muted" style="margin:0 0 4px">Nothing scheduled yet — add your first cook below.</p>`
+        }
+
+        <hr class="divider" />
+        <p class="eyebrow" style="margin:0 0 8px">Add a cook</p>
+        ${
+          openWeeks.length
+            ? `<div class="queue-add">
+                 <select class="queue-week" id="add-week" aria-label="Week to schedule">
+                   ${openWeeks.map((k) => { const d = dateFromKey(k); return `<option value="${k}">${WEEKDAYS_SHORT[d.getDay()]} ${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}</option>`; }).join("")}
+                 </select>
+                 <select class="queue-select" id="add-dish" aria-label="Dish to schedule">
+                   <option value="">＋ Pick a dish…</option>
+                   ${state.dishes.map((d) => `<option value="${d.id}">${esc(d.name)}</option>`).join("")}
+                 </select>
+               </div>`
+            : `<p class="muted" style="margin:0">Every week for the next few months is booked. 🎉</p>`
+        }
       </div>
 
       ${
@@ -1068,12 +1102,15 @@ app.addEventListener("click", (e) => {
   if (removeList) return removeFromList(removeList.dataset.removeList);
   if (t.closest("[data-clear-checked]")) return clearChecked();
 
-  // schedule: download the whole queue as one calendar file
+  if (t.closest("[data-queue-expand]")) {
+    queueExpanded = !queueExpanded;
+    return renderWeek();
+  }
+
+  // schedule: download every booked cook as one calendar file
   if (t.closest("[data-schedule-ics]")) {
-    const entries = weekSlots(8)
-      .map((date) => ({ date, dish: findDish(state.schedule[dateKey(date)]) }))
-      .filter((e) => e.dish);
-    if (!entries.length) return toast("Assign a dish to a week first.");
+    const entries = scheduledCooks(); // { key, date, dish }
+    if (!entries.length) return toast("Schedule a cook first.");
     download("beans-table-schedule.ics", buildScheduleIcs(entries), "text/calendar");
     return;
   }
@@ -1091,8 +1128,17 @@ app.addEventListener("change", (e) => {
   const slot = t.closest("[data-slot]");
   if (slot) {
     if (t.value) state.schedule[slot.dataset.slot] = t.value;
-    else delete state.schedule[slot.dataset.slot];
+    else delete state.schedule[slot.dataset.slot]; // "— remove —"
     saveState();
+    return renderWeek();
+  }
+  if (t.id === "add-dish") {
+    const week = document.getElementById("add-week");
+    if (t.value && week && week.value) {
+      state.schedule[week.value] = t.value;
+      saveState();
+      toast("Added to the queue");
+    }
     return renderWeek();
   }
   if (t.id === "cookDay") {
