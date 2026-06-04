@@ -3,7 +3,7 @@
    here on purpose — web push needs a server, which would break the no-backend rule.
    Reminders are delivered by the user's own calendar app. */
 
-const CACHE = "beans-table-v8";
+const CACHE = "beans-table-v10";
 const ASSETS = [
   "./",
   "./index.html",

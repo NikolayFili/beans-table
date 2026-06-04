@@ -20,10 +20,11 @@ keys, no AI, no tracking, and no running costs.**
 - **Rating + cook log** — tap the stars to rate anytime. "Mark as cooked" records the
   date, bumps the times-cooked counter, updates last-cooked, and can attach a note and a
   rating for that specific occasion. A per-dish cook log keeps the history.
-- **This week** — pick the dish, set cook day + time (default Saturday 10:00), and
-  generate a recurring weekly reminder two ways: an **Add to Google Calendar** link and a
-  downloadable **`.ics`** file (with an alarm 3 hours before). The next occurrence of your
-  chosen weekday/time is computed correctly.
+- **Schedule** — set cook day + time (default Saturday 10:00) and assign a dish to each
+  upcoming week, seeing the whole queue at a glance. "Up next" surfaces the soonest cook
+  with an **Add to Google Calendar** link; **Calendar (.ics)** downloads every planned
+  cook as one file, each event with an alarm 3 hours before. The library's "Cook this
+  week" button schedules a dish for the soonest slot.
 - **Shopping list** — ingredients grouped by dish, each with a checkbox that persists.
   Clear checked items or remove a dish.
 - **Backup** — JSON **export / import** so you can back up and move between devices.

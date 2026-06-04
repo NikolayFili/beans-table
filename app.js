@@ -15,21 +15,21 @@
    ========================================================================= */
 
 const STORAGE_KEY = "beansTable";
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 function defaultState() {
   return {
     version: SCHEMA_VERSION,
     settings: { cookDay: 6, cookTime: "10:00", sort: "rating" },
-    weekDishId: null,
+    schedule: {}, // dateKey "YYYY-MM-DD" -> dishId, one planned cook per week
     listDishIds: [],
     checked: {},
     dishes: [],
   };
 }
 
-// Migrate older blobs forward. We only have v1 -> v2 historically; unknown/missing
-// shapes are coerced into a valid v2 blob so the app never crashes on bad data.
+// Migrate older blobs forward. v2 had a single `weekDishId`; v3 replaces it with a
+// `schedule` map. Unknown/missing shapes are coerced so the app never crashes.
 function migrate(raw) {
   if (!raw || typeof raw !== "object") return defaultState();
   const base = defaultState();
@@ -39,10 +39,26 @@ function migrate(raw) {
     settings: { ...base.settings, ...(raw.settings || {}) },
     checked: raw.checked && typeof raw.checked === "object" ? raw.checked : {},
     listDishIds: Array.isArray(raw.listDishIds) ? raw.listDishIds : [],
+    schedule: raw.schedule && typeof raw.schedule === "object" && !Array.isArray(raw.schedule) ? { ...raw.schedule } : {},
     dishes: Array.isArray(raw.dishes) ? raw.dishes.map(normalizeDish) : [],
   };
+  // v2 -> v3: fold the old single "this week" pick into the schedule.
+  if (raw.weekDishId && Object.keys(out.schedule).length === 0) {
+    out.schedule[dateKey(nextOccurrence(out.settings.cookDay, out.settings.cookTime))] = raw.weekDishId;
+  }
+  delete out.weekDishId;
+  pruneSchedule(out); // drop past weeks and any dish that no longer exists
   out.version = SCHEMA_VERSION;
   return out;
+}
+
+// Keep the schedule forward-looking and consistent with the dish library.
+function pruneSchedule(st) {
+  const todayK = dateKey(new Date());
+  const ids = new Set(st.dishes.map((d) => d.id));
+  for (const k of Object.keys(st.schedule)) {
+    if (k < todayK || !ids.has(st.schedule[k])) delete st.schedule[k];
+  }
 }
 
 function normalizeDish(d) {
@@ -292,6 +308,39 @@ function nextOccurrence(day, time) {
   return result;
 }
 
+// Local date key "YYYY-MM-DD" — schedule map keys (lexically sortable/comparable).
+function dateKey(d) {
+  const p = (n) => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+}
+
+// The next `count` cook-weekday dates (at cook time), starting with the upcoming one.
+function weekSlots(count) {
+  const first = nextOccurrence(state.settings.cookDay, state.settings.cookTime);
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    const d = new Date(first);
+    d.setDate(first.getDate() + i * 7);
+    out.push(d);
+  }
+  return out;
+}
+
+// Key of the soonest upcoming cook — the "this week" slot the cards target.
+function thisWeekKey() {
+  return dateKey(nextOccurrence(state.settings.cookDay, state.settings.cookTime));
+}
+
+// Friendly label for a scheduled slot date.
+function slotLabel(date) {
+  const days = Math.round((startOfDay(date) - startOfDay(new Date())) / 86400000);
+  const wd = WEEKDAYS[date.getDay()];
+  const md = date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  if (days < 7) return "This " + wd + " · " + md;
+  if (days < 14) return "Next " + wd + " · " + md;
+  return wd + " · " + md;
+}
+
 // Floating local timestamp: YYYYMMDDTHHMMSS (no Z) — interpreted in the user's tz.
 function icsLocal(d) {
   const p = (n) => String(n).padStart(2, "0");
@@ -301,9 +350,12 @@ function icsLocal(d) {
   );
 }
 
-function googleCalendarUrl(dish) {
-  const start = nextOccurrence(state.settings.cookDay, state.settings.cookTime);
-  const end = new Date(start.getTime() + 90 * 60000); // assume ~90 min in the kitchen
+const COOK_MINUTES = 90; // assume ~90 min in the kitchen
+const escIcs = (s) => String(s).replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
+
+// Google Calendar "add event" link for one dated cook (single occurrence).
+function googleCalendarUrl(dish, start) {
+  const end = new Date(start.getTime() + COOK_MINUTES * 60000);
   const details =
     (dish.sourceUrl ? "Recipe: " + dish.sourceUrl + "\n\n" : "") +
     (ingredientCount(dish) ? "Shopping list:\n" + dish.ingredients.map((i) => "• " + ingredientText(i)).filter((s) => s !== "• ").join("\n") : "Cook something lovely for Bean.");
@@ -313,32 +365,24 @@ function googleCalendarUrl(dish) {
     text: "Cook for Bean: " + dish.name,
     dates: icsLocal(start) + "/" + icsLocal(end),
     details: details,
-    recur: "RRULE:FREQ=WEEKLY",
   });
   if (tz) params.set("ctz", tz);
   return "https://calendar.google.com/calendar/render?" + params.toString();
 }
 
-function buildIcs(dish) {
-  const start = nextOccurrence(state.settings.cookDay, state.settings.cookTime);
-  const end = new Date(start.getTime() + 90 * 60000);
-  const fold = (s) => s; // lines are short enough; keep simple
-  const escIcs = (s) => String(s).replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
+// One VEVENT for a dish at a given start, with a 3-hour-before alarm.
+function veventLines(dish, start) {
+  const end = new Date(start.getTime() + COOK_MINUTES * 60000);
   const desc = escIcs(
     (dish.sourceUrl ? "Recipe: " + dish.sourceUrl + "\n" : "") +
     (ingredientCount(dish) ? "Ingredients:\n" + dish.ingredients.map((i) => "- " + ingredientText(i)).filter((s) => s !== "- ").join("\n") : "")
   );
-  const lines = [
-    "BEGIN:VCALENDAR",
-    "VERSION:2.0",
-    "PRODID:-//Bean's Table//EN",
-    "CALSCALE:GREGORIAN",
+  return [
     "BEGIN:VEVENT",
-    "UID:" + dish.id + "@beans-table",
+    "UID:" + dish.id + "-" + icsLocal(start) + "@beans-table",
     "DTSTAMP:" + icsLocal(new Date()),
     "DTSTART:" + icsLocal(start),
     "DTEND:" + icsLocal(end),
-    "RRULE:FREQ=WEEKLY",
     "SUMMARY:" + escIcs("Cook for Bean: " + dish.name),
     "DESCRIPTION:" + desc,
     "BEGIN:VALARM",
@@ -347,9 +391,16 @@ function buildIcs(dish) {
     "TRIGGER:-PT3H",
     "END:VALARM",
     "END:VEVENT",
-    "END:VCALENDAR",
   ];
-  return lines.map(fold).join("\r\n");
+}
+
+// Wrap one or more VEVENTs into a downloadable calendar file.
+function buildScheduleIcs(entries) {
+  return [
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Bean's Table//EN", "CALSCALE:GREGORIAN",
+    ...entries.flatMap((e) => veventLines(e.dish, e.date)),
+    "END:VCALENDAR",
+  ].join("\r\n");
 }
 
 function download(filename, text, mime) {
@@ -440,10 +491,10 @@ function starsHtml(rating, opts = {}) {
   return s;
 }
 
-function dishCard(d) {
+function dishCard(d, thisWeekId) {
   const count = ingredientCount(d);
   const inList = state.listDishIds.includes(d.id);
-  const isWeek = state.weekDishId === d.id;
+  const isWeek = thisWeekId === d.id;
   return `
   <article class="card" data-card="${d.id}">
     <div class="card-top">
@@ -453,7 +504,7 @@ function dishCard(d) {
     ${starsHtml(d.rating, { dishId: d.id, context: "library", showNum: false })}
     <div class="meta-row">
       <span><b>${d.timesCooked}</b> cook${d.timesCooked === 1 ? "" : "s"}</span>
-      <span>${esc(relDays(d.lastCooked))}</span>
+      ${d.timesCooked ? `<span>${esc(relDays(d.lastCooked))}</span>` : ""}
       <span><b>${count}</b> ingredient${count === 1 ? "" : "s"}</span>
     </div>
     <div class="card-actions">
@@ -471,6 +522,7 @@ function renderLibrary() {
     .join("");
 
   const soon = upcomingOccasions(16)[0];
+  const thisWeekId = state.schedule[thisWeekKey()];
 
   app.innerHTML = `
     ${soon ? occasionBanner(soon) : ""}
@@ -486,7 +538,7 @@ function renderLibrary() {
     </div>
     ${
       dishes.length
-        ? `<div class="grid">${dishes.map(dishCard).join("")}</div>`
+        ? `<div class="grid">${dishes.map((d) => dishCard(d, thisWeekId)).join("")}</div>`
         : `<div class="empty">
              <p class="big">Your table is empty</p>
              <p>Add the first dish you'd like to cook for Bean.</p>
@@ -500,22 +552,23 @@ function renderLibrary() {
    ========================================================================= */
 
 function renderWeek() {
-  const dish = state.weekDishId ? findDish(state.weekDishId) : null;
-  const dishOptions =
-    (state.weekDishId ? "" : `<option value="" selected>Choose a dish…</option>`) +
-    state.dishes
-      .map((d) => `<option value="${d.id}" ${d.id === state.weekDishId ? "selected" : ""}>${esc(d.name)}</option>`)
-      .join("");
-  const next = dish ? nextOccurrence(state.settings.cookDay, state.settings.cookTime) : null;
   const occUpcoming = upcomingOccasions(75);
   const soonWeek = occUpcoming[0] && occUpcoming[0].days <= 12 ? occUpcoming[0] : null; // nearest, banner-worthy
   const ahead = occUpcoming.filter((o) => o !== soonWeek).slice(0, 4); // the rest, for the list
 
+  const slots = weekSlots(8); // the next 8 cook dates
+  const planned = slots.map((date) => ({ date, dish: findDish(state.schedule[dateKey(date)]) })).filter((s) => s.dish);
+  const upNext = planned[0] || null;
+
+  const dishOptionsFor = (selectedId) =>
+    `<option value="">— none —</option>` +
+    state.dishes.map((d) => `<option value="${d.id}" ${d.id === selectedId ? "selected" : ""}>${esc(d.name)}</option>`).join("");
+
   app.innerHTML = `
     <div class="section-head">
       <div>
-        <p class="eyebrow">This week</p>
-        <h2>Plan the cook</h2>
+        <p class="eyebrow">Schedule</p>
+        <h2>Plan the cooks</h2>
       </div>
     </div>
 
@@ -523,13 +576,9 @@ function renderWeek() {
 
     ${
       state.dishes.length === 0
-        ? `<div class="empty"><p class="big">No dishes yet</p><p>Add a dish first, then plan your week.</p><button class="btn primary" data-new>＋ Add dish</button></div>`
+        ? `<div class="empty"><p class="big">No dishes yet</p><p>Add a dish first, then plan your weeks.</p><button class="btn primary" data-new>＋ Add dish</button></div>`
         : `
       <div class="week-card">
-        <div class="field">
-          <label for="weekDish">Dish for this week</label>
-          <select id="weekDish">${dishOptions}</select>
-        </div>
         <div class="inline-grid">
           <div class="field" style="margin:0">
             <label for="cookDay">Cook day</label>
@@ -545,24 +594,41 @@ function renderWeek() {
       </div>
 
       ${
-        dish
-          ? `
-        <div class="week-card">
-          <p class="eyebrow">Up next</p>
-          <h3 style="font-size:22px;margin:2px 0 6px">${esc(dish.name)}</h3>
-          <p class="muted" style="margin:0 0 14px">${WEEKDAYS[state.settings.cookDay]} at ${fmtTime(state.settings.cookTime)} · next on ${esc(fmtDate(next.toISOString()))}</p>
-
-          <p class="eyebrow">Weekly reminder</p>
-          <div class="pill-row" style="margin:6px 0 14px">
-            <a class="btn primary" href="${googleCalendarUrl(dish)}" target="_blank" rel="noopener">Add to Google Calendar</a>
-            <button class="btn" data-ics="${dish.id}">Download .ics</button>
-          </div>
-
-          <hr class="divider" />
-          <button class="btn block" data-build-list="${dish.id}">🛒 Build shopping list from this dish</button>
-        </div>`
-          : `<div class="note-soft">Pick a dish above to generate this week's reminder.</div>`
+        upNext
+          ? `<div class="week-card">
+              <p class="eyebrow">Up next</p>
+              <h3 style="font-size:22px;margin:2px 0 6px">${esc(upNext.dish.name)}</h3>
+              <p class="muted" style="margin:0 0 14px">${esc(slotLabel(upNext.date))} at ${fmtTime(state.settings.cookTime)}</p>
+              <div class="pill-row">
+                <a class="btn primary" href="${googleCalendarUrl(upNext.dish, upNext.date)}" target="_blank" rel="noopener">Add to Google Calendar</a>
+                <button class="btn" data-build-list="${upNext.dish.id}">🛒 Shopping list</button>
+              </div>
+            </div>`
+          : ""
       }
+
+      <div class="week-card">
+        <div class="row-between" style="margin-bottom:12px">
+          <p class="eyebrow" style="margin:0">The queue</p>
+          ${planned.length ? `<button class="btn sm" data-schedule-ics>↓ Calendar (.ics)</button>` : ""}
+        </div>
+        <div class="queue">
+          ${slots
+            .map((date) => {
+              const key = dateKey(date);
+              const sid = state.schedule[key] || "";
+              return `<div class="queue-row ${sid ? "filled" : ""}">
+                <div class="queue-date">
+                  <span class="qd-day">${WEEKDAYS_SHORT[date.getDay()]}</span>
+                  <span class="qd-num">${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+                </div>
+                <select class="queue-select" data-slot="${key}" aria-label="Dish for ${esc(slotLabel(date))}">${dishOptionsFor(sid)}</select>
+              </div>`;
+            })
+            .join("")}
+        </div>
+        <p class="hint" style="margin-top:12px">Assign a dish to each week. “Calendar (.ics)” adds every planned cook to your calendar app, each with an alarm 3 hours before.</p>
+      </div>
 
       ${
         ahead.length
@@ -601,7 +667,7 @@ function renderList() {
     </div>
     ${
       groups.length === 0
-        ? `<div class="empty"><p class="big">Nothing on the list</p><p>Add dishes from your library or from This Week.</p></div>`
+        ? `<div class="empty"><p class="big">Nothing on the list</p><p>Add dishes from your library or the Schedule.</p></div>`
         : groups
             .map((d) => {
               const items = d.ingredients
@@ -901,11 +967,6 @@ function openSettings() {
       <div class="occ-list">${upcomingOccasions(null).map(occasionRow).join("")}</div>
     </div>
 
-    <div class="detail-section">
-      <h3>About</h3>
-      <p class="muted" style="margin:0">Free and private — no accounts, servers, AI, or tracking. Reminders come from <b>your own calendar app</b>; Bean's Table can't send push notifications itself.</p>
-    </div>
-
     <p class="signoff">Made for Bean, by Boyfriend. 🤍</p>
   `);
 }
@@ -947,9 +1008,15 @@ app.addEventListener("click", (e) => {
 
   const cookWeek = t.closest("[data-cook-week]");
   if (cookWeek) {
-    state.weekDishId = cookWeek.dataset.cookWeek;
+    const key = thisWeekKey();
+    if (state.schedule[key] === cookWeek.dataset.cookWeek) {
+      delete state.schedule[key];
+      toast("Cleared from this week");
+    } else {
+      state.schedule[key] = cookWeek.dataset.cookWeek;
+      toast("Scheduled for this week");
+    }
     saveState();
-    toast("Set as this week's dish");
     return render();
   }
 
@@ -969,11 +1036,13 @@ app.addEventListener("click", (e) => {
   if (removeList) return removeFromList(removeList.dataset.removeList);
   if (t.closest("[data-clear-checked]")) return clearChecked();
 
-  // this week
-  const ics = t.closest("[data-ics]");
-  if (ics) {
-    const d = findDish(ics.dataset.ics);
-    if (d) download(`bean-${d.name.replace(/\W+/g, "-").toLowerCase()}.ics`, buildIcs(d), "text/calendar");
+  // schedule: download the whole queue as one calendar file
+  if (t.closest("[data-schedule-ics]")) {
+    const entries = weekSlots(8)
+      .map((date) => ({ date, dish: findDish(state.schedule[dateKey(date)]) }))
+      .filter((e) => e.dish);
+    if (!entries.length) return toast("Assign a dish to a week first.");
+    download("beans-table-schedule.ics", buildScheduleIcs(entries), "text/calendar");
     return;
   }
   const buildList = t.closest("[data-build-list]");
@@ -984,11 +1053,13 @@ app.addEventListener("click", (e) => {
   }
 });
 
-// This Week selects/inputs
+// Schedule selects/inputs
 app.addEventListener("change", (e) => {
   const t = e.target;
-  if (t.id === "weekDish") {
-    state.weekDishId = t.value || null;
+  const slot = t.closest("[data-slot]");
+  if (slot) {
+    if (t.value) state.schedule[slot.dataset.slot] = t.value;
+    else delete state.schedule[slot.dataset.slot];
     saveState();
     return renderWeek();
   }
@@ -1109,7 +1180,7 @@ function deleteDish(id) {
   if (!window.confirm(`Delete "${d.name}"? This can't be undone.`)) return;
   state.dishes = state.dishes.filter((x) => x.id !== id);
   state.listDishIds = state.listDishIds.filter((x) => x !== id);
-  if (state.weekDishId === id) state.weekDishId = null;
+  Object.keys(state.schedule).forEach((k) => { if (state.schedule[k] === id) delete state.schedule[k]; });
   dropChecked(id);
   saveState();
   closeSheet();
