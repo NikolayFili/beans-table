@@ -188,11 +188,12 @@ function daysLabel(days) {
 }
 
 // Big celebratory banner for the single nearest occasion.
-function occasionBanner(o) {
+// Pass `customLine` to override the headline (e.g. an action-oriented nudge).
+function occasionBanner(o, customLine) {
   return `<div class="occasion ${o.days === 0 ? "today" : ""}">
     <span class="occ-emoji">${o.emoji}</span>
     <div class="occ-body">
-      <p class="occ-line">${esc(o.line(o.count))}</p>
+      <p class="occ-line">${esc(customLine || o.line(o.count))}</p>
       <p class="occ-sub">${esc(o.name)} · ${daysLabel(o.days)}</p>
     </div>
   </div>`;
@@ -506,8 +507,9 @@ function renderWeek() {
       .map((d) => `<option value="${d.id}" ${d.id === state.weekDishId ? "selected" : ""}>${esc(d.name)}</option>`)
       .join("");
   const next = dish ? nextOccurrence(state.settings.cookDay, state.settings.cookTime) : null;
-  const soonWeek = upcomingOccasions(12)[0];   // nearest occasion worth flagging on the cook
-  const ahead = upcomingOccasions(75).slice(0, 4); // short list of what's coming up
+  const occUpcoming = upcomingOccasions(75);
+  const soonWeek = occUpcoming[0] && occUpcoming[0].days <= 12 ? occUpcoming[0] : null; // nearest, banner-worthy
+  const ahead = occUpcoming.filter((o) => o !== soonWeek).slice(0, 4); // the rest, for the list
 
   app.innerHTML = `
     <div class="section-head">
@@ -516,6 +518,8 @@ function renderWeek() {
         <h2>Plan the cook</h2>
       </div>
     </div>
+
+    ${soonWeek ? occasionBanner(soonWeek, "A lovely week to make it special for Bean.") : ""}
 
     ${
       state.dishes.length === 0
@@ -547,8 +551,6 @@ function renderWeek() {
           <p class="eyebrow">Up next</p>
           <h3 style="font-size:22px;margin:2px 0 6px">${esc(dish.name)}</h3>
           <p class="muted" style="margin:0 0 14px">${WEEKDAYS[state.settings.cookDay]} at ${fmtTime(state.settings.cookTime)} · next on ${esc(fmtDate(next.toISOString()))}</p>
-
-          ${soonWeek ? `<div class="note-soft accent" style="margin-bottom:14px">${soonWeek.emoji} <b>${esc(soonWeek.name)}</b> is ${daysLabel(soonWeek.days)} — a lovely week to make it special for Bean.</div>` : ""}
 
           <p class="eyebrow">Weekly reminder</p>
           <div class="pill-row" style="margin:6px 0 14px">
