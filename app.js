@@ -879,33 +879,32 @@ function confirmCooked(id) {
 
 /* ---- Settings / backup ---- */
 function openSettings() {
+  const n = state.dishes.length;
   openSheet(`
     <div class="sheet-head">
-      <h2>Backup &amp; about</h2>
+      <h2>Settings</h2>
       <button class="sheet-close" data-close aria-label="Close">×</button>
     </div>
 
     <div class="detail-section">
-      <h3>Your data</h3>
-      <p class="muted" style="margin-top:0">Everything lives in this browser only — ${state.dishes.length} dish${state.dishes.length === 1 ? "" : "es"} saved. Export a backup before switching phones.</p>
+      <h3>Backup</h3>
+      <p class="muted" style="margin:0 0 12px">${n} dish${n === 1 ? "" : "es"} saved in this browser — there's no cloud. Export a backup before switching devices, then import it on the new one.</p>
       <div class="stack">
-        <button class="btn block" id="export-btn">⬇︎ Export backup (JSON)</button>
-        <button class="btn block ghost" id="import-btn">⬆︎ Import backup (JSON)</button>
+        <button class="btn block" id="export-btn">↓ Export backup</button>
+        <button class="btn block ghost" id="import-btn">↑ Import backup</button>
       </div>
     </div>
 
-    <hr class="divider" />
-
     <div class="detail-section">
-      <h3>Bean &amp; Boyfriend — our calendar</h3>
+      <h3>Our calendar</h3>
       <div class="occ-list">${upcomingOccasions(null).map(occasionRow).join("")}</div>
     </div>
 
-    <hr class="divider" />
-    <div class="note-soft">
-      Bean's Table is a free, no-backend app. No accounts, no servers, no AI, no tracking.
-      Reminders are delivered by <b>your own calendar app</b> — this app can't send push notifications.
+    <div class="detail-section">
+      <h3>About</h3>
+      <p class="muted" style="margin:0">Free and private — no accounts, servers, AI, or tracking. Reminders come from <b>your own calendar app</b>; Bean's Table can't send push notifications itself.</p>
     </div>
+
     <p class="signoff">Made for Bean, by Boyfriend. 🤍</p>
   `);
 }
