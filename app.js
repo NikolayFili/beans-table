@@ -431,7 +431,7 @@ function sortedDishes() {
 
 function starsHtml(rating, opts = {}) {
   const cls = opts.large ? "stars lg" : "stars";
-  let s = `<span class="${cls}" data-stars ${opts.dishId ? `data-dish="${opts.dishId}"` : ""} ${opts.context ? `data-context="${opts.context}"` : ""}>`;
+  let s = `<span class="${cls}" data-stars title="Tap to rate — tap the lit star again to clear" ${opts.dishId ? `data-dish="${opts.dishId}"` : ""} ${opts.context ? `data-context="${opts.context}"` : ""}>`;
   for (let i = 1; i <= 5; i++) {
     s += `<button type="button" data-star="${i}" aria-label="${i} star${i > 1 ? "s" : ""}" class="${i <= rating ? "on" : ""}">★</button>`;
   }
@@ -458,7 +458,7 @@ function dishCard(d) {
     </div>
     <div class="card-actions">
       <button class="btn sm ${isWeek ? "primary" : ""}" data-cook-week="${d.id}">${isWeek ? "This week ✓" : "Cook this week"}</button>
-      <button class="btn sm" data-add-list="${d.id}">${inList ? "On list ✓" : "Add to list"}</button>
+      <button class="btn sm ${inList ? "on" : ""}" data-toggle-list="${d.id}">${inList ? "On list ✓" : "Add to list"}</button>
       <button class="btn sm ghost" data-open="${d.id}">Open</button>
     </div>
   </article>`;
@@ -814,7 +814,7 @@ function openDetail(id) {
 
     <div class="pill-row" style="margin:6px 0 14px">
       <button class="btn primary" data-mark-cooked="${d.id}">🍳 Mark as cooked</button>
-      <button class="btn" data-add-list="${d.id}">Add to list</button>
+      <button class="btn ${state.listDishIds.includes(d.id) ? "on" : ""}" data-toggle-list="${d.id}">${state.listDishIds.includes(d.id) ? "On list ✓" : "Add to list"}</button>
       <button class="btn ghost" data-edit="${d.id}">Edit</button>
     </div>
 
@@ -953,8 +953,11 @@ app.addEventListener("click", (e) => {
     return render();
   }
 
-  const addList = t.closest("[data-add-list]");
-  if (addList) return addToList(addList.dataset.addList);
+  const toggleListBtn = t.closest("[data-toggle-list]");
+  if (toggleListBtn) {
+    toggleList(toggleListBtn.dataset.toggleList);
+    return render();
+  }
 
   const star = t.closest("[data-stars] [data-star]");
   if (star) return handleStarClick(star);
@@ -1034,8 +1037,14 @@ sheet.addEventListener("click", (e) => {
   const confirm = t.closest("[data-confirm-cooked]");
   if (confirm) return confirmCooked(confirm.dataset.confirmCooked);
 
-  const addList = t.closest("[data-add-list]");
-  if (addList) return addToList(addList.dataset.addList);
+  const toggleListBtn = t.closest("[data-toggle-list]");
+  if (toggleListBtn) {
+    const id = toggleListBtn.dataset.toggleList;
+    toggleList(id);
+    render();        // refresh the library/list behind the sheet
+    openDetail(id);  // re-render the sheet so the button label flips
+    return;
+  }
 
   if (t.closest("#export-btn")) return exportData();
   if (t.closest("#import-btn")) return document.getElementById("importFile").click();
@@ -1044,24 +1053,23 @@ sheet.addEventListener("click", (e) => {
 /* ---- Stars: works in library, detail, and the occasion form ---- */
 function handleStarClick(btn) {
   const wrap = btn.closest("[data-stars]");
-  const value = Number(btn.dataset.star);
+  const clicked = Number(btn.dataset.star);
   const context = wrap.dataset.context;
+  const paint = (value) =>
+    wrap.querySelectorAll("[data-star]").forEach((b) => b.classList.toggle("on", Number(b.dataset.star) <= value));
 
   if (context === "occasion") {
-    occasionRating = value;
-    wrap.querySelectorAll("[data-star]").forEach((b) => b.classList.toggle("on", Number(b.dataset.star) <= value));
-    return;
+    // tap the current rating again to clear it
+    occasionRating = occasionRating === clicked ? 0 : clicked;
+    return paint(occasionRating);
   }
-  const dishId = wrap.dataset.dish;
-  const d = findDish(dishId);
+  const d = findDish(wrap.dataset.dish);
   if (!d) return;
-  d.rating = value;
+  d.rating = d.rating === clicked ? 0 : clicked; // tap the lit star again to unrate
   saveState();
-  wrap.querySelectorAll("[data-star]").forEach((b) => b.classList.toggle("on", Number(b.dataset.star) <= value));
+  paint(d.rating);
   const num = wrap.querySelector(".rating-num");
-  if (num) num.textContent = value.toFixed(0);
-  // keep the library card grid in sync if rating sort is active
-  if (context === "detail" && currentTab === "library") {/* re-render on close */}
+  if (num) num.textContent = d.rating ? d.rating.toFixed(0) : "—";
 }
 
 /* ---- Ingredient editor row ops ---- */
@@ -1102,7 +1110,7 @@ function deleteDish(id) {
   state.dishes = state.dishes.filter((x) => x.id !== id);
   state.listDishIds = state.listDishIds.filter((x) => x !== id);
   if (state.weekDishId === id) state.weekDishId = null;
-  Object.keys(state.checked).forEach((k) => { if (k.startsWith(id + ":")) delete state.checked[k]; });
+  dropChecked(id);
   saveState();
   closeSheet();
   render();
@@ -1110,6 +1118,11 @@ function deleteDish(id) {
 }
 
 /* ---- Shopping list ops ---- */
+// Forget any checked-off state for a dish's ingredients.
+function dropChecked(id) {
+  Object.keys(state.checked).forEach((k) => { if (k.startsWith(id + ":")) delete state.checked[k]; });
+}
+// Add-only (used by "Build shopping list from this dish").
 function addToList(id) {
   if (!state.listDishIds.includes(id)) {
     state.listDishIds.push(id);
@@ -1120,9 +1133,21 @@ function addToList(id) {
   }
   render();
 }
+// On ↔ off toggle for the dish cards and the detail sheet. Caller re-renders.
+function toggleList(id) {
+  if (state.listDishIds.includes(id)) {
+    state.listDishIds = state.listDishIds.filter((x) => x !== id);
+    dropChecked(id);
+    toast("Removed from list");
+  } else {
+    state.listDishIds.push(id);
+    toast("Added to shopping list");
+  }
+  saveState();
+}
 function removeFromList(id) {
   state.listDishIds = state.listDishIds.filter((x) => x !== id);
-  Object.keys(state.checked).forEach((k) => { if (k.startsWith(id + ":")) delete state.checked[k]; });
+  dropChecked(id);
   saveState();
   renderList();
   toast("Removed from list");

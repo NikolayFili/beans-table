@@ -118,6 +118,7 @@ a { color: var(--terracotta); }
 .btn.ghost { background: transparent; }
 .btn.danger { color: var(--terracotta); }
 .btn.block { width: 100%; justify-content: center; }
+.btn.on { background: var(--soft); border-color: color-mix(in srgb, var(--terracotta) 32%, var(--hairline)); }
 .btn.sm { padding: 7px 12px; font-size: 13px; }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 
