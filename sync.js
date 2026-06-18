@@ -17,6 +17,7 @@
   let busy = false;
   let lastSync = null;
   let pushTimer = null;
+  let initialPending = false; // true only during the first sync after load
 
   function loadCfg() {
     try { return JSON.parse(localStorage.getItem(SYNC_KEY)) || {}; } catch (e) { return {}; }
@@ -110,7 +111,12 @@
 
   /* ---------- boot: auto-connect unless turned off ---------- */
   function boot() {
-    if (!cfg.off) connect(); // silent; on the Vercel app this "just works"
+    if (cfg.off) return;
+    initialPending = true; // lets the library show "Loading…" instead of a false "empty"
+    connect().finally(() => {
+      initialPending = false;
+      if (typeof render === "function") render(); // resolve the loading state (and any pulled data)
+    });
   }
 
   window.cloudSync = {
@@ -123,6 +129,7 @@
     getConfig: () => ({ ...cfg }),
     isConnected: () => connected,
     isConfigured: () => true, // no setup required
+    isInitialSyncing: () => initialPending,
   };
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);

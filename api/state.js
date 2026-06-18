@@ -25,18 +25,23 @@ export default async function handler(req, res) {
 
   const sql = neon(process.env.DATABASE_URL);
   try {
-    await sql`create table if not exists app_state (
-      id text primary key,
-      data jsonb not null,
-      updated_at bigint not null default 0
-    )`;
-
+    // GET is the load path — keep it to a SINGLE query (no create-table round-trip).
     if (req.method === "GET") {
-      const rows = await sql`select data from app_state where id = 'beans-table'`;
-      return res.status(200).json(rows.length ? rows[0].data : null);
+      try {
+        const rows = await sql`select data from app_state where id = 'beans-table'`;
+        return res.status(200).json(rows.length ? rows[0].data : null);
+      } catch (e) {
+        return res.status(200).json(null); // table not created yet → treat as empty
+      }
     }
 
     if (req.method === "PUT") {
+      // Ensure the table exists only on writes (rarer, not latency-sensitive).
+      await sql`create table if not exists app_state (
+        id text primary key,
+        data jsonb not null,
+        updated_at bigint not null default 0
+      )`;
       const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body || {};
       const updatedAt = Number(body.updatedAt) || 0;
       await sql`insert into app_state (id, data, updated_at)

@@ -565,6 +565,11 @@ function renderLibrary() {
     ${
       dishes.length
         ? `<div class="grid">${dishes.map((d) => dishCard(d, thisWeekId)).join("")}</div>`
+        : window.cloudSync && cloudSync.isInitialSyncing && cloudSync.isInitialSyncing()
+        ? `<div class="empty">
+             <p class="big">Loading your dishes…</p>
+             <p>Syncing from the cloud.</p>
+           </div>`
         : `<div class="empty">
              <p class="big">Your table is empty</p>
              <p>Add the first dish you'd like to cook for Bean.</p>
