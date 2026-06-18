@@ -992,7 +992,6 @@ function openSettings() {
   const n = state.dishes.length;
   const sync = window.cloudSync;
   const scfg = sync ? sync.getConfig() : {};
-  const sheetUrl = scfg.spreadsheetId ? "https://docs.google.com/spreadsheets/d/" + scfg.spreadsheetId + "/edit" : "";
 
   openSheet(`
     <div class="sheet-head">
@@ -1001,18 +1000,18 @@ function openSettings() {
     </div>
 
     <div class="detail-section">
-      <h3>Sync with Google Sheets</h3>
-      <p class="muted" style="margin:0 0 12px">Optional — keep Bean's Table in sync across your devices through your own Google Sheet. Free, private to your Google account, no Apps Script. <a href="https://github.com/NikolayFili/beans-table#sync-with-google-sheets" target="_blank" rel="noopener">One-time setup steps ↗</a></p>
+      <h3>Cloud sync</h3>
+      <p class="muted" style="margin:0 0 12px">Keep Bean's Table in sync across your devices via the app's own database. Enter the same passphrase on each device and connect.</p>
       <div class="field">
-        <label for="sync-sheet">Google Sheet link</label>
-        <input type="text" id="sync-sheet" value="${esc(sheetUrl)}" placeholder="https://docs.google.com/spreadsheets/d/…" autocomplete="off" />
+        <label for="sync-token">Sync passphrase</label>
+        <input type="password" id="sync-token" value="${esc(scfg.token || "")}" placeholder="your shared passphrase" autocomplete="off" />
       </div>
       <div class="field">
-        <label for="sync-client">Google OAuth Client ID</label>
-        <input type="text" id="sync-client" value="${esc(scfg.clientId || "")}" placeholder="…apps.googleusercontent.com" autocomplete="off" />
+        <label for="sync-base">Sync server URL <span class="hint" style="display:inline">(only if the app isn't on Vercel)</span></label>
+        <input type="text" id="sync-base" value="${esc(scfg.apiBase || "")}" placeholder="https://beans-table.vercel.app" autocomplete="off" />
       </div>
       <div class="stack">
-        <button class="btn primary block" id="sync-connect">Connect Google</button>
+        <button class="btn primary block" id="sync-connect">Connect</button>
         <button class="btn ghost block" id="sync-disconnect" ${sync && sync.isConnected() ? "" : "hidden"}>Disconnect</button>
       </div>
       <p class="muted" id="sync-status" style="margin:10px 0 0;font-size:13px">${esc(sync ? sync.statusText() : "")}</p>
@@ -1201,10 +1200,10 @@ sheet.addEventListener("click", (e) => {
   if (t.closest("#sync-connect")) {
     if (!window.cloudSync) return;
     cloudSync.setConfig({
-      clientId: document.getElementById("sync-client").value,
-      spreadsheetId: document.getElementById("sync-sheet").value,
+      token: document.getElementById("sync-token").value,
+      apiBase: document.getElementById("sync-base").value,
     });
-    return cloudSync.connect(!cloudSync.isConnected());
+    return cloudSync.connect();
   }
   if (t.closest("#sync-disconnect")) return window.cloudSync && cloudSync.disconnect();
 });

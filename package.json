@@ -1,0 +1,10 @@
+{
+  "name": "beans-table",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Bean's Table — a quiet weekly cooking app. Static frontend + a tiny serverless state API backed by Neon Postgres.",
+  "dependencies": {
+    "@neondatabase/serverless": "^0.10.4"
+  }
+}

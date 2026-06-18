@@ -3,7 +3,7 @@
    here on purpose — web push needs a server, which would break the no-backend rule.
    Reminders are delivered by the user's own calendar app. */
 
-const CACHE = "beans-table-v13";
+const CACHE = "beans-table-v14";
 const ASSETS = [
   "./",
   "./index.html",
@@ -34,6 +34,9 @@ self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
   const url = new URL(request.url);
+
+  // Never cache the sync API — always hit the network so data stays fresh.
+  if (url.pathname.startsWith("/api/")) return;
 
   if (url.origin === self.location.origin) {
     event.respondWith(

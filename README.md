@@ -53,41 +53,47 @@ python3 -m http.server 8000
 …or just open `index.html` in a browser. (A server is recommended so the service worker
 and PWA install work; `file://` blocks service workers.)
 
-## Sync with Google Sheets
+## Cloud sync (Vercel + Neon)
 
 Bean's Table is local-first (localStorage), but you can **optionally** sync across your
-devices through **your own Google Sheet** — free, private to your Google account, and with
-**no Apps Script and no server**. It uses the Google Sheets API with Google sign-in
-(OAuth). The whole app-state is stored as JSON in cell **A2** of the sheet, and sync is
+devices via a small backend: a Vercel serverless function (`api/state.js`) that reads/writes
+the whole app-state JSON in a **Neon Postgres** database. The database credentials live
+**only** in Vercel's server-side environment — never in the browser or this repo. Sync is
 last-write-wins (the most recently edited device wins).
 
-### One-time setup (~10 minutes)
+The endpoint is gated by a shared **passphrase** (`APP_TOKEN`) that you set in Vercel and
+also type into the app on each device, so the API isn't open to the world.
 
-You need a free Google Cloud OAuth **Client ID**. Only you can create it — it ties the app
-to your Google account.
+### Deploy (one time)
 
-1. Go to the [Google Cloud Console](https://console.cloud.google.com/) and **create a
-   project** (any name, e.g. "Beans Table").
-2. **APIs & Services → Library →** search **"Google Sheets API" → Enable**.
-3. **APIs & Services → OAuth consent screen →** choose **External**, set an app name and
-   your email, and **add your own Google account as a Test user**. (No verification is
-   needed for personal use.)
-4. **APIs & Services → Credentials → Create credentials → OAuth client ID →** Application
-   type **Web application**. Under **Authorized JavaScript origins** add:
-   - `https://nikolayfili.github.io`
-   - `http://localhost:4173` (optional, for local testing)
-   Click **Create** and copy the **Client ID** (`…apps.googleusercontent.com`).
-5. Create a **new Google Sheet** (it can be blank) and copy its link from the address bar.
-6. In Bean's Table, open **⚙ Settings → Sync with Google Sheets**, paste the **Sheet link**
-   and the **Client ID**, then tap **Connect Google** and sign in. The first sign-in shows
-   an "unverified app" screen — that's expected for a personal app; choose **Advanced → go
-   to Bean's Table**.
+1. **Neon:** you already have a database. Keep its **pooled** `DATABASE_URL` handy. (If the
+   password was ever shared in plaintext, rotate it in the Neon console first.)
+2. **Vercel:** at [vercel.com](https://vercel.com), **Add New → Project → Import** the
+   `beans-table` GitHub repo. Framework preset: **Other** (zero-config; static files are
+   served from the root and `api/` becomes a function).
+3. In the project's **Settings → Environment Variables**, add:
+   - `DATABASE_URL` = your Neon pooled connection string
+   - `APP_TOKEN` = any passphrase you choose (this is what you'll type in the app)
+4. **Deploy.** Your app is now at `https://<project>.vercel.app`.
+5. Open the app (the Vercel URL), then **⚙ Settings → Cloud sync**, enter the **passphrase**,
+   and tap **Connect**. Leave "Sync server URL" blank when using the Vercel-hosted app. Do
+   the same on every device — they'll all stay in sync.
 
-After that, every device where you enter the same Client ID + Sheet link and connect will
-stay in sync. Your data only ever travels between your browser and your own Sheet. The
-Client ID is not a secret (it's safe in the client); nothing is stored in this repo.
+Your existing local data **migrates automatically**: the first device you connect pushes its
+local data up to the (empty) database; after that every device pulls/pushes changes.
 
-> Note: the Sheets API is **free** with generous quotas. There's no billing to enable.
+The database schema is a single table:
+
+```sql
+create table app_state (
+  id text primary key,        -- always 'beans-table'
+  data jsonb not null,        -- the whole app-state blob
+  updated_at bigint not null  -- last-write-wins clock
+);
+```
+
+> The GitHub Pages copy still works as a local-only app, but its sync needs the Vercel
+> backend — set "Sync server URL" to your Vercel URL there, or just use the Vercel app.
 
 ## Backup & device migration
 
