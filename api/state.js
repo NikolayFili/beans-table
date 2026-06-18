@@ -17,7 +17,9 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(204).end();
 
   if (!process.env.DATABASE_URL) return res.status(500).json({ error: "DATABASE_URL not configured" });
-  if (!process.env.APP_TOKEN || req.headers["x-app-token"] !== process.env.APP_TOKEN) {
+  // Auth is OPTIONAL: only enforced if an APP_TOKEN is configured. With no token
+  // set, the endpoint is open (simplest UX) — fine for a low-stakes personal app.
+  if (process.env.APP_TOKEN && req.headers["x-app-token"] !== process.env.APP_TOKEN) {
     return res.status(401).json({ error: "unauthorized" });
   }
 

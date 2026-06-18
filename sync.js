@@ -1,15 +1,16 @@
 /* Cloud sync for Bean's Table — talks to our own /api/state serverless function,
-   which holds the Neon Postgres credentials server-side. The browser only ever
-   sends a shared passphrase (the user types it on each device; it gates the API).
-   No DB credentials ever reach the client.
+   which holds the Neon Postgres credentials server-side (never in the browser).
 
-   Last-write-wins by state.updatedAt. Loaded AFTER app.js, so it shares globals:
-   `state`, `migrate`, `render`, `applyRemoteState`, `toast`, `STORAGE_KEY`. */
+   Zero-config: when the app is served from the same domain as the API (Vercel), it
+   auto-syncs on load — nothing to enter. Last-write-wins by state.updatedAt.
+
+   Loaded AFTER app.js, so it shares globals: `state`, `migrate`, `render`,
+   `applyRemoteState`, `toast`, `STORAGE_KEY`. */
 
 (() => {
   "use strict";
 
-  const SYNC_KEY = "beansTableSync"; // { apiBase, token } — kept out of the data blob and the repo
+  const SYNC_KEY = "beansTableSync"; // { apiBase, off } — only needed off-Vercel / to disable
 
   let cfg = loadCfg();
   let connected = false;
@@ -22,25 +23,24 @@
   }
   function saveCfg() { localStorage.setItem(SYNC_KEY, JSON.stringify(cfg)); }
 
-  function setConfig({ apiBase, token }) {
+  function setConfig({ apiBase, off }) {
     if (apiBase != null) cfg.apiBase = apiBase.trim().replace(/\/+$/, ""); // strip trailing slash
-    if (token != null) cfg.token = token.trim();
+    if (off != null) cfg.off = !!off;
     saveCfg();
   }
 
   async function api(method, body) {
     const res = await fetch((cfg.apiBase || "") + "/api/state", {
       method,
-      headers: { "content-type": "application/json", "x-app-token": cfg.token || "" },
+      headers: { "content-type": "application/json" },
       body: body ? JSON.stringify(body) : undefined,
     });
-    if (res.status === 401) throw new Error("unauthorized");
     if (!res.ok) throw new Error("HTTP " + res.status);
     return method === "GET" ? res.json() : null;
   }
 
   async function connect() {
-    if (!cfg.token) { toast("Enter your sync passphrase first."); return; }
+    if (cfg.off) { toast("Sync is turned off."); return; }
     busy = true;
     updateUi();
     try {
@@ -49,27 +49,32 @@
       const remoteT = (remote && remote.updatedAt) || 0;
       if (remote && remoteT > localT) {
         applyRemoteState(remote);   // cloud is newer — adopt it
-        toast("Pulled latest from the cloud");
       } else {
         await api("PUT", state);    // seed/refresh the cloud from this device
-        toast("Synced to the cloud");
       }
       connected = true;
       lastSync = Date.now();
     } catch (e) {
       connected = false;
       console.warn("Cloud sync failed:", e);
-      toast(e.message === "unauthorized" ? "Wrong passphrase." : "Couldn't reach the sync server.");
     } finally {
       busy = false;
       updateUi();
     }
   }
 
+  // Manual connect from Settings — gives explicit feedback (boot connect is silent).
+  async function connectManual() {
+    cfg.off = false; saveCfg();
+    await connect();
+    toast(connected ? "Synced" : "Couldn't reach the sync server.");
+  }
+
   function disconnect() {
     connected = false;
+    cfg.off = true; saveCfg();
     clearTimeout(pushTimer);
-    toast("Stopped syncing");
+    toast("Sync turned off");
     updateUi();
   }
 
@@ -89,35 +94,35 @@
     return new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
   }
   function statusText() {
-    if (!cfg.token) return "Not connected. Enter your passphrase, then connect.";
-    if (busy) return "Connecting…";
-    if (connected) return "Connected" + (lastSync ? " · synced at " + fmtClock(lastSync) : "");
-    return "Saved your passphrase — tap Connect.";
+    if (cfg.off) return "Sync is off.";
+    if (busy) return "Syncing…";
+    if (connected) return "Synced" + (lastSync ? " · " + fmtClock(lastSync) : "") + " — saves automatically across your devices.";
+    return "Not syncing — open this app on its Vercel address, or set a sync server URL below.";
   }
   function updateUi() {
     const s = document.getElementById("sync-status");
     if (s) s.textContent = statusText();
     const c = document.getElementById("sync-connect");
-    if (c) c.textContent = busy ? "Connecting…" : connected ? "Sync now" : "Connect";
+    if (c) c.textContent = busy ? "Syncing…" : connected ? "Sync now" : "Connect";
     const d = document.getElementById("sync-disconnect");
     if (d) d.hidden = !connected;
   }
 
-  /* ---------- boot: silently reconnect if previously set up ---------- */
+  /* ---------- boot: auto-connect unless turned off ---------- */
   function boot() {
-    if (cfg.token) connect();
+    if (!cfg.off) connect(); // silent; on the Vercel app this "just works"
   }
 
   window.cloudSync = {
     onLocalSave,
-    connect,
+    connect: connectManual,
     disconnect,
     setConfig,
     updateUi,
     statusText,
     getConfig: () => ({ ...cfg }),
     isConnected: () => connected,
-    isConfigured: () => !!cfg.token,
+    isConfigured: () => true, // no setup required
   };
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);

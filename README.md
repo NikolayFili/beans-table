@@ -55,31 +55,26 @@ and PWA install work; `file://` blocks service workers.)
 
 ## Cloud sync (Vercel + Neon)
 
-Bean's Table is local-first (localStorage), but you can **optionally** sync across your
-devices via a small backend: a Vercel serverless function (`api/state.js`) that reads/writes
-the whole app-state JSON in a **Neon Postgres** database. The database credentials live
-**only** in Vercel's server-side environment — never in the browser or this repo. Sync is
-last-write-wins (the most recently edited device wins).
+Bean's Table syncs across your devices via a small backend: a Vercel serverless function
+(`api/state.js`) that reads/writes the whole app-state JSON in a **Neon Postgres** database.
+The database credentials live **only** in Vercel's server-side environment — never in the
+browser or this repo. Sync is last-write-wins (the most recently edited device wins).
 
-The endpoint is gated by a shared **passphrase** (`APP_TOKEN`) that you set in Vercel and
-also type into the app on each device, so the API isn't open to the world.
+**No passphrase, no setup.** When the app is served from its Vercel domain, it **auto-syncs
+on load** — open it on any device and your data follows. The API endpoint is left open (it's
+just a personal recipe list); auth can be re-enabled by setting an `APP_TOKEN` env var (the
+function enforces it only when present, and the client would send it via the Settings field).
 
 ### Deploy (one time)
 
-1. **Neon:** you already have a database. Keep its **pooled** `DATABASE_URL` handy. (If the
-   password was ever shared in plaintext, rotate it in the Neon console first.)
-2. **Vercel:** at [vercel.com](https://vercel.com), **Add New → Project → Import** the
-   `beans-table` GitHub repo. Framework preset: **Other** (zero-config; static files are
-   served from the root and `api/` becomes a function).
-3. In the project's **Settings → Environment Variables**, add:
-   - `DATABASE_URL` = your Neon pooled connection string
-   - `APP_TOKEN` = any passphrase you choose (this is what you'll type in the app)
-4. **Deploy.** Your app is now at `https://<project>.vercel.app`.
-5. Open the app (the Vercel URL), then **⚙ Settings → Cloud sync**, enter the **passphrase**,
-   and tap **Connect**. Leave "Sync server URL" blank when using the Vercel-hosted app. Do
-   the same on every device — they'll all stay in sync.
+1. **Neon:** keep your **pooled** `DATABASE_URL` handy.
+2. **Vercel:** **Add New → Project → Import** the `beans-table` repo (preset **Other** —
+   zero-config; static files from root, `api/` becomes a function). Or just `vercel deploy`.
+3. **Settings → Environment Variables:** add `DATABASE_URL` = your Neon pooled string.
+   (Optional: add `APP_TOKEN` to require a passphrase.)
+4. **Deploy.** Open `https://<project>.vercel.app` — sync just works. Open it on every device.
 
-Your existing local data **migrates automatically**: the first device you connect pushes its
+Your existing local data **migrates automatically**: the first device you open pushes its
 local data up to the (empty) database; after that every device pulls/pushes changes.
 
 The database schema is a single table:

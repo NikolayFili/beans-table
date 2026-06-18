@@ -1001,20 +1001,19 @@ function openSettings() {
 
     <div class="detail-section">
       <h3>Cloud sync</h3>
-      <p class="muted" style="margin:0 0 12px">Keep Bean's Table in sync across your devices via the app's own database. Enter the same passphrase on each device and connect.</p>
-      <div class="field">
-        <label for="sync-token">Sync passphrase</label>
-        <input type="password" id="sync-token" value="${esc(scfg.token || "")}" placeholder="your shared passphrase" autocomplete="off" />
-      </div>
-      <div class="field">
-        <label for="sync-base">Sync server URL <span class="hint" style="display:inline">(only if the app isn't on Vercel)</span></label>
-        <input type="text" id="sync-base" value="${esc(scfg.apiBase || "")}" placeholder="https://beans-table.vercel.app" autocomplete="off" />
-      </div>
+      <p class="muted" id="sync-status" style="margin:0 0 12px">${esc(sync ? sync.statusText() : "")}</p>
       <div class="stack">
-        <button class="btn primary block" id="sync-connect">Connect</button>
-        <button class="btn ghost block" id="sync-disconnect" ${sync && sync.isConnected() ? "" : "hidden"}>Disconnect</button>
+        <button class="btn block" id="sync-connect">Sync now</button>
+        <button class="btn ghost block danger" id="sync-disconnect" ${sync && sync.isConnected() ? "" : "hidden"}>Turn off sync</button>
       </div>
-      <p class="muted" id="sync-status" style="margin:10px 0 0;font-size:13px">${esc(sync ? sync.statusText() : "")}</p>
+      <details style="margin-top:12px">
+        <summary class="muted" style="font-size:13px;cursor:pointer">Advanced</summary>
+        <div class="field" style="margin-top:10px">
+          <label for="sync-base">Sync server URL</label>
+          <input type="text" id="sync-base" value="${esc(scfg.apiBase || "")}" placeholder="(blank when hosted on Vercel)" autocomplete="off" />
+          <p class="hint">Only needed if you open the app somewhere other than its Vercel address (e.g. GitHub Pages). Then point it at <code>https://beans-table.vercel.app</code>.</p>
+        </div>
+      </details>
     </div>
 
     <div class="detail-section">
@@ -1199,10 +1198,8 @@ sheet.addEventListener("click", (e) => {
 
   if (t.closest("#sync-connect")) {
     if (!window.cloudSync) return;
-    cloudSync.setConfig({
-      token: document.getElementById("sync-token").value,
-      apiBase: document.getElementById("sync-base").value,
-    });
+    const base = document.getElementById("sync-base");
+    if (base) cloudSync.setConfig({ apiBase: base.value });
     return cloudSync.connect();
   }
   if (t.closest("#sync-disconnect")) return window.cloudSync && cloudSync.disconnect();
