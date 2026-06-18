@@ -456,6 +456,8 @@ function toast(msg) {
 let state = loadState();
 let currentTab = "library";
 let queueExpanded = false; // Schedule: show all booked weeks vs. just the first few
+let librarySearch = ""; // transient text filter for the dish library
+let libraryFilter = "all"; // transient source filter: all | youtube | instagram | link | mine
 
 const app = document.getElementById("app");
 
@@ -521,8 +523,10 @@ function dishCard(d, thisWeekId) {
   const count = ingredientCount(d);
   const inList = state.listDishIds.includes(d.id);
   const isWeek = thisWeekId === d.id;
+  const ytId = youtubeId(d.sourceUrl);
   return `
   <article class="card" data-card="${d.id}">
+    ${ytId ? `<div class="card-thumb" data-open="${d.id}"><img src="https://i.ytimg.com/vi/${ytId}/hqdefault.jpg" loading="lazy" alt="" /></div>` : ""}
     <div class="card-top">
       <h3 class="card-title" data-open="${d.id}">${esc(d.name)}</h3>
       <span class="badge ${d.source}">${SOURCE_LABEL[d.source]}</span>
@@ -541,14 +545,36 @@ function dishCard(d, thisWeekId) {
   </article>`;
 }
 
+const SOURCE_FILTERS = [["all", "All sources"], ["youtube", "YouTube"], ["instagram", "Instagram"], ["link", "Link"], ["mine", "Mine"]];
+
+// The grid / empty / no-match content. Split out so the search box can re-render
+// just the results (and keep its focus) without rebuilding the whole view.
+function libResultsHtml() {
+  const thisWeekId = state.schedule[thisWeekKey()];
+  const all = sortedDishes();
+  if (all.length === 0) {
+    const loading = window.cloudSync && cloudSync.isInitialSyncing && cloudSync.isInitialSyncing();
+    return loading
+      ? `<div class="empty"><p class="big">Loading your dishes…</p><p>Syncing from the cloud.</p></div>`
+      : `<div class="empty"><p class="big">Your table is empty</p><p>Add the first dish you'd like to cook for Bean.</p><button class="btn primary" data-new>＋ Add your first dish</button></div>`;
+  }
+  const q = librarySearch.trim().toLowerCase();
+  const filtered = all.filter(
+    (d) =>
+      (libraryFilter === "all" || d.source === libraryFilter) &&
+      (!q || d.name.toLowerCase().includes(q) || d.ingredients.some((i) => (i.name || "").toLowerCase().includes(q)))
+  );
+  if (!filtered.length) return `<div class="empty"><p class="big">No matches</p><p>Try a different search or source filter.</p></div>`;
+  return `<div class="grid">${filtered.map((d) => dishCard(d, thisWeekId)).join("")}</div>`;
+}
+
 function renderLibrary() {
-  const dishes = sortedDishes();
   const sortBtns = Object.entries(SORTS)
     .map(([k, v]) => `<button data-sort="${k}" aria-pressed="${state.settings.sort === k}">${v.label}</button>`)
     .join("");
 
   const soon = upcomingOccasions(16)[0];
-  const thisWeekId = state.schedule[thisWeekKey()];
+  const showSearch = state.dishes.length >= 4; // appears as the library grows
 
   app.innerHTML = `
     ${soon ? occasionBanner(soon) : ""}
@@ -561,21 +587,18 @@ function renderLibrary() {
     </div>
     <div class="toolbar">
       <div class="segmented" role="group" aria-label="Sort dishes">${sortBtns}</div>
+      ${
+        showSearch
+          ? `<div class="toolbar-row">
+               <input type="search" id="lib-search" class="lib-search" placeholder="Search dishes or ingredients…" value="${esc(librarySearch)}" autocomplete="off" />
+               <select id="lib-filter" class="lib-filter" aria-label="Filter by source">
+                 ${SOURCE_FILTERS.map(([v, l]) => `<option value="${v}" ${libraryFilter === v ? "selected" : ""}>${l}</option>`).join("")}
+               </select>
+             </div>`
+          : ""
+      }
     </div>
-    ${
-      dishes.length
-        ? `<div class="grid">${dishes.map((d) => dishCard(d, thisWeekId)).join("")}</div>`
-        : window.cloudSync && cloudSync.isInitialSyncing && cloudSync.isInitialSyncing()
-        ? `<div class="empty">
-             <p class="big">Loading your dishes…</p>
-             <p>Syncing from the cloud.</p>
-           </div>`
-        : `<div class="empty">
-             <p class="big">Your table is empty</p>
-             <p>Add the first dish you'd like to cook for Bean.</p>
-             <button class="btn primary" data-new>＋ Add your first dish</button>
-           </div>`
-    }`;
+    <div id="lib-results">${libResultsHtml()}</div>`;
 }
 
 /* =========================================================================
@@ -704,6 +727,9 @@ function fmtTime(t) {
 
 function renderList() {
   const groups = state.listDishIds.map(findDish).filter(Boolean);
+  const onList = new Set(state.listDishIds);
+  // Upcoming scheduled cooks not yet on the list — one tap to add their ingredients.
+  const suggestions = scheduledCooks().filter((c) => !onList.has(c.dish.id));
 
   app.innerHTML = `
     <div class="section-head">
@@ -714,8 +740,26 @@ function renderList() {
       ${groups.length ? `<button class="btn sm ghost" data-clear-checked>Clear checked</button>` : ""}
     </div>
     ${
+      suggestions.length
+        ? `<div class="week-card sched-suggest">
+             <p class="eyebrow" style="margin:0 0 10px">From your schedule</p>
+             ${suggestions
+               .map(
+                 (c) => `<div class="suggest-row">
+                   <div class="suggest-info">
+                     <span class="suggest-name">${esc(c.dish.name)}</span>
+                     <span class="suggest-date">${esc(slotLabel(c.date))} · ${ingredientCount(c.dish)} ingredient${ingredientCount(c.dish) === 1 ? "" : "s"}</span>
+                   </div>
+                   <button class="btn sm" data-toggle-list="${c.dish.id}">＋ Add</button>
+                 </div>`
+               )
+               .join("")}
+           </div>`
+        : ""
+    }
+    ${
       groups.length === 0
-        ? `<div class="empty"><p class="big">Nothing on the list</p><p>Add dishes from your library or the Schedule.</p></div>`
+        ? `<div class="empty"><p class="big">Nothing on the list yet</p><p>Add dishes from your library or the Schedule.</p></div>`
         : groups
             .map((d) => {
               const items = d.ingredients
@@ -1125,9 +1169,24 @@ app.addEventListener("click", (e) => {
   }
 });
 
+// Library search — update only the results so the input keeps focus.
+app.addEventListener("input", (e) => {
+  if (e.target.id === "lib-search") {
+    librarySearch = e.target.value;
+    const r = document.getElementById("lib-results");
+    if (r) r.innerHTML = libResultsHtml();
+  }
+});
+
 // Schedule selects/inputs
 app.addEventListener("change", (e) => {
   const t = e.target;
+  if (t.id === "lib-filter") {
+    libraryFilter = t.value;
+    const r = document.getElementById("lib-results");
+    if (r) r.innerHTML = libResultsHtml();
+    return;
+  }
   const slot = t.closest("[data-slot]");
   if (slot) {
     if (t.value) state.schedule[slot.dataset.slot] = t.value;

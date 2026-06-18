@@ -36,6 +36,14 @@
       headers: { "content-type": "application/json" },
       body: body ? JSON.stringify(body) : undefined,
     });
+    if (res.status === 409) {
+      // Server refused a stale write and returned the newer state — self-heal.
+      const remote = await res.json().catch(() => null);
+      const err = new Error("stale");
+      err.stale = true;
+      err.remote = remote;
+      throw err;
+    }
     if (!res.ok) throw new Error("HTTP " + res.status);
     return method === "GET" ? res.json() : null;
   }
@@ -50,14 +58,20 @@
       const remoteT = (remote && remote.updatedAt) || 0;
       if (remote && remoteT > localT) {
         applyRemoteState(remote);   // cloud is newer — adopt it
-      } else {
-        await api("PUT", state);    // seed/refresh the cloud from this device
-      }
+      } else if (localT > remoteT) {
+        await api("PUT", state);    // this device is ahead — push it up
+      }                             // equal → already in sync, do nothing
       connected = true;
       lastSync = Date.now();
     } catch (e) {
-      connected = false;
-      console.warn("Cloud sync failed:", e);
+      if (e && e.stale && e.remote) {
+        applyRemoteState(e.remote); // adopt the newer cloud copy instead of clobbering
+        connected = true;
+        lastSync = Date.now();
+      } else {
+        connected = false;
+        console.warn("Cloud sync failed:", e);
+      }
     } finally {
       busy = false;
       updateUi();
@@ -86,7 +100,10 @@
     pushTimer = setTimeout(() => {
       api("PUT", state)
         .then(() => { lastSync = Date.now(); updateUi(); })
-        .catch((e) => { console.warn("Cloud push failed:", e); });
+        .catch((e) => {
+          if (e && e.stale && e.remote) { applyRemoteState(e.remote); lastSync = Date.now(); updateUi(); }
+          else console.warn("Cloud push failed:", e);
+        });
     }, 1500); // debounce bursts of edits into one write
   }
 

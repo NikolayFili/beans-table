@@ -36,14 +36,36 @@ export default async function handler(req, res) {
     }
 
     if (req.method === "PUT") {
-      // Ensure the table exists only on writes (rarer, not latency-sensitive).
+      // Ensure tables exist (only on writes — rarer, not latency-sensitive).
       await sql`create table if not exists app_state (
         id text primary key,
         data jsonb not null,
         updated_at bigint not null default 0
       )`;
+      await sql`create table if not exists app_state_history (
+        seq bigserial primary key,
+        state_id text not null,
+        data jsonb not null,
+        updated_at bigint not null,
+        archived_at timestamptz not null default now()
+      )`;
+
       const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body || {};
       const updatedAt = Number(body.updatedAt) || 0;
+
+      const cur = await sql`select data, updated_at from app_state where id = 'beans-table'`;
+      if (cur.length && Number(cur[0].updated_at) > updatedAt) {
+        // Anti-clobber: incoming write is older than what's stored. Refuse and hand
+        // back the newer data so the client can self-heal instead of overwriting.
+        return res.status(409).json(cur[0].data);
+      }
+      if (cur.length) {
+        // Snapshot the version we're about to replace, then keep the last 50.
+        await sql`insert into app_state_history (state_id, data, updated_at)
+                  values ('beans-table', ${JSON.stringify(cur[0].data)}::jsonb, ${Number(cur[0].updated_at)})`;
+        await sql`delete from app_state_history where state_id = 'beans-table' and seq not in (
+                  select seq from app_state_history where state_id = 'beans-table' order by seq desc limit 50)`;
+      }
       await sql`insert into app_state (id, data, updated_at)
                 values ('beans-table', ${JSON.stringify(body)}::jsonb, ${updatedAt})
                 on conflict (id) do update set data = excluded.data, updated_at = excluded.updated_at`;
